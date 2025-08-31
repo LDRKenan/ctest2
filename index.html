@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Codemia AI - Multi-Platform Code Generator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="container mx-auto px-4 py-8" x-data="codeGeneratorApp()">
+        <!-- Header -->
+        <header class="text-center mb-12">
+            <h1 class="text-4xl font-bold text-gray-800 mb-4">🚀 Codemia AI</h1>
+            <p class="text-xl text-gray-600 max-w-2xl mx-auto">
+                Transform your app ideas into working code across iOS, Android, Web, and Backend platforms using AI
+            </p>
+        </header>
+
+        <!-- Main Interface -->
+        <div class="max-w-4xl mx-auto">
+            <!-- Generation Form -->
+            <div class="bg-white rounded-lg shadow-lg p-8 mb-8" x-show="!currentJob">
+                <h2 class="text-2xl font-semibold mb-6">Generate Your App</h2>
+                
+                <form @submit.prevent="generateApp()">
+                    <div class="mb-6">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            Describe your app idea
+                        </label>
+                        <textarea 
+                            x-model="description"
+                            placeholder="e.g., A TikTok-like app with video upload, social features, and payment integration"
+                            class="w-full h-32 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            required
+                        ></textarea>
+                    </div>
+
+                    <div class="mb-6">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            Select Platforms
+                        </label>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <template x-for="platform in availablePlatforms">
+                                <label class="flex items-center space-x-2 cursor-pointer">
+                                    <input 
+                                        type="checkbox" 
+                                        :value="platform.id"
+                                        x-model="selectedPlatforms"
+                                        class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                    >
+                                    <span x-text="platform.name" class="text-sm"></span>
+                                </label>
+                            </template>
+                        </div>
+                    </div>
+
+                    <div class="mb-6">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            Preferences (Optional)
+                        </label>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <select x-model="preferences.database" class="px-3 py-2 border border-gray-300 rounded-md">
+                                <option value="">Database (Auto)</option>
+                                <option value="mongodb">MongoDB</option>
+                                <option value="postgresql">PostgreSQL</option>
+                                <option value="mysql">MySQL</option>
+                                <option value="firebase">Firebase</option>
+                            </select>
+                            <select x-model="preferences.authentication" class="px-3 py-2 border border-gray-300 rounded-md">
+                                <option value="">Authentication (Auto)</option>
+                                <option value="firebase">Firebase Auth</option>
+                                <option value="auth0">Auth0</option>
+                                <option value="supabase">Supabase</option>
+                                <option value="custom">Custom JWT</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <button 
+                        type="submit"
+                        :disabled="loading || !description.trim() || selectedPlatforms.length === 0"
+                        class="w-full bg-blue-600 text-white py-3 px-6 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed font-medium"
+                    >
+                        <span x-show="!loading">Generate Multi-Platform App</span>
+                        <span x-show="loading">Starting Generation...</span>
+                    </button>
+                </form>
+            </div>
+
+            <!-- Job Status -->
+            <div class="bg-white rounded-lg shadow-lg p-8 mb-8" x-show="currentJob">
+                <h2 class="text-2xl font-semibold mb-6">Generation Progress</h2>
+                
+                <div class="mb-6">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="text-sm font-medium text-gray-700">Status: <span x-text="currentJob?.status" class="capitalize"></span></span>
+                        <span class="text-sm text-gray-500" x-text="currentJob?.progress + '%'"></span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-2">
+                        <div 
+                            class="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                            :style="`width: ${currentJob?.progress || 0}%`"
+                        ></div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                    <div class="bg-gray-50 p-4 rounded-md">
+                        <h3 class="font-medium text-gray-700 mb-2">Job ID</h3>
+                        <p class="text-sm text-gray-600 font-mono" x-text="currentJob?.jobId"></p>
+                    </div>
+                    <div class="bg-gray-50 p-4 rounded-md">
+                        <h3 class="font-medium text-gray-700 mb-2">Estimated Time</h3>
+                        <p class="text-sm text-gray-600" x-text="formatTime(currentJob?.estimatedTimeRemaining)"></p>
+                    </div>
+                </div>
+
+                <div class="flex space-x-4">
+                    <button 
+                        @click="downloadCode()"
+                        x-show="currentJob?.status === 'completed'"
+                        class="bg-green-600 text-white py-2 px-6 rounded-md hover:bg-green-700"
+                    >
+                        Download Code
+                    </button>
+                    <button 
+                        @click="cancelJob()"
+                        x-show="currentJob?.status !== 'completed' && currentJob?.status !== 'failed'"
+                        class="bg-red-600 text-white py-2 px-6 rounded-md hover:bg-red-700"
+                    >
+                        Cancel
+                    </button>
+                    <button 
+                        @click="startNew()"
+                        class="bg-gray-600 text-white py-2 px-6 rounded-md hover:bg-gray-700"
+                    >
+                        Start New Generation
+                    </button>
+                </div>
+            </div>
+
+            <!-- Code Analysis Section -->
+            <div class="bg-white rounded-lg shadow-lg p-8">
+                <h2 class="text-2xl font-semibold mb-6">Analyze Existing Code</h2>
+                
+                <form @submit.prevent="analyzeCode()">
+                    <div class="mb-6">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            Upload Codebase (ZIP file or individual files)
+                        </label>
+                        <input 
+                            type="file"
+                            @change="handleFileUpload"
+                            accept=".zip,.js,.ts,.swift,.kt,.java,.py"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md"
+                        >
+                    </div>
+
+                    <div class="mb-6">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            Analysis Instructions
+                        </label>
+                        <textarea 
+                            x-model="analysisInstruction"
+                            placeholder="e.g., Convert this React app to Next.js with TypeScript"
+                            class="w-full h-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        ></textarea>
+                    </div>
+
+                    <button 
+                        type="submit"
+                        :disabled="!selectedFile || !analysisInstruction.trim()"
+                        class="w-full bg-purple-600 text-white py-3 px-6 rounded-md hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed font-medium"
+                    >
+                        Analyze & Modernize Code
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function codeGeneratorApp() {
+            return {
+                description: '',
+                selectedPlatforms: ['ios', 'android', 'web', 'backend'],
+                preferences: {
+                    database: '',
+                    authentication: ''
+                },
+                availablePlatforms: [
+                    { id: 'ios', name: 'iOS (SwiftUI)' },
+                    { id: 'android', name: 'Android (Kotlin)' },
+                    { id: 'web', name: 'Web (Next.js)' },
+                    { id: 'backend', name: 'Backend (Node.js)' }
+                ],
+                loading: false,
+                currentJob: null,
+                statusInterval: null,
+                selectedFile: null,
+                analysisInstruction: '',
+
+                async generateApp() {
+                    this.loading = true;
+                    
+                    try {
+                        const response = await fetch('/api/generate', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                description: this.description,
+                                platforms: this.selectedPlatforms,
+                                preferences: this.preferences
+                            })
+                        });
+
+                        const data = await response.json();
+                        
+                        if (response.ok) {
+                            this.currentJob = data;
+                            this.startStatusPolling(data.jobId);
+                        } else {
+                            alert('Error: ' + data.error);
+                        }
+                    } catch (error) {
+                        alert('Network error: ' + error.message);
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+
+                async analyzeCode() {
+                    if (!this.selectedFile || !this.analysisInstruction.trim()) return;
+
+                    const formData = new FormData();
+                    formData.append('codebase', this.selectedFile);
+                    formData.append('instruction', this.analysisInstruction);
+
+                    try {
+                        const response = await fetch('/api/analyze', {
+                            method: 'POST',
+                            body: formData
+                        });
+
+                        const data = await response.json();
+                        
+                        if (response.ok) {
+                            this.currentJob = data;
+                            this.startStatusPolling(data.jobId);
+                        } else {
+                            alert('Error: ' + data.error);
+                        }
+                    } catch (error) {
+                        alert('Network error: ' + error.message);
+                    }
+                },
+
+                startStatusPolling(jobId) {
+                    this.statusInterval = setInterval(async () => {
+                        try {
+                            const response = await fetch(`/api/status/${jobId}`);
+                            const data = await response.json();
+                            
+                            if (response.ok) {
+                                this.currentJob = data;
+                                
+                                if (data.status === 'completed' || data.status === 'failed' || data.status === 'cancelled') {
+                                    clearInterval(this.statusInterval);
+                                }
+                            }
+                        } catch (error) {
+                            console.error('Status polling error:', error);
+                        }
+                    }, 2000);
+                },
+
+                async downloadCode() {
+                    if (!this.currentJob?.jobId) return;
+                    
+                    try {
+                        const response = await fetch(`/api/status/download/${this.currentJob.jobId}`);
+                        
+                        if (response.ok) {
+                            const blob = await response.blob();
+                            const url = window.URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `generated_app_${this.currentJob.jobId}.zip`;
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            window.URL.revokeObjectURL(url);
+                        } else {
+                            const error = await response.json();
+                            alert('Download error: ' + error.error);
+                        }
+                    } catch (error) {
+                        alert('Download failed: ' + error.message);
+                    }
+                },
+
+                async cancelJob() {
+                    if (!this.currentJob?.jobId) return;
+                    
+                    try {
+                        const response = await fetch(`/api/status/${this.currentJob.jobId}`, {
+                            method: 'DELETE'
+                        });
+                        
+                        if (response.ok) {
+                            clearInterval(this.statusInterval);
+                            this.currentJob.status = 'cancelled';
+                        }
+                    } catch (error) {
+                        console.error('Cancel error:', error);
+                    }
+                },
+
+                startNew() {
+                    this.currentJob = null;
+                    this.description = '';
+                    this.selectedPlatforms = ['ios', 'android', 'web', 'backend'];
+                    this.preferences = { database: '', authentication: '' };
+                    this.selectedFile = null;
+                    this.analysisInstruction = '';
+                    
+                    if (this.statusInterval) {
+                        clearInterval(this.statusInterval);
+                    }
+                },
+
+                handleFileUpload(event) {
+                    this.selectedFile = event.target.files[0];
+                },
+
+                formatTime(seconds) {
+                    if (!seconds) return 'Calculating...';
+                    
+                    const minutes = Math.floor(seconds / 60);
+                    const remainingSeconds = seconds % 60;
+                    
+                    if (minutes > 0) {
+                        return `${minutes}m ${remainingSeconds}s`;
+                    } else {
+                        return `${remainingSeconds}s`;
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+</html>
